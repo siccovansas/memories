@@ -61,7 +61,7 @@ export async function go() {
  * @param dayid Day ID
  */
 export async function getDaysLocal(): Promise<IDay[]> {
-  if (!_enabledBucketIds?.length) return [];
+  if (!getEnabledBucketIds()?.length) return [];
 
   const days: IDay[] = [];
 
@@ -89,7 +89,7 @@ export async function getDaysLocal(): Promise<IDay[]> {
  * @param dayid Day ID
  */
 export async function getDayLocal(dayid: number): Promise<IPhoto[]> {
-  if (!_enabledBucketIds?.length) return [];
+  if (!getEnabledBucketIds()?.length) return [];
 
   return (
     await db.local
