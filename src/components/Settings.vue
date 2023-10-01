@@ -160,6 +160,7 @@ import { defineComponent } from 'vue';
 import UserConfig from '../mixins/UserConfig';
 import * as utils from '../services/utils';
 import * as nativex from '../native';
+import * as nativeSync from '../native/sync';
 
 import NcButton from '@nextcloud/vue/dist/Components/NcButton';
 const NcAppSettingsDialog = () => import('@nextcloud/vue/dist/Components/NcAppSettingsDialog');
@@ -169,6 +170,7 @@ const NcCheckboxRadioSwitch = () => import('@nextcloud/vue/dist/Components/NcChe
 import MultiPathSelectionModal from './modal/MultiPathSelectionModal.vue';
 
 import type { IConfig } from '../types';
+import type { LocalFolderConfig } from '../native/types';
 
 export default defineComponent({
   name: 'Settings',
@@ -184,7 +186,7 @@ export default defineComponent({
   mixins: [UserConfig],
 
   data: () => ({
-    localFolders: [] as nativex.LocalFolderConfig[],
+    localFolders: [] as LocalFolderConfig[],
   }),
 
   props: {
@@ -289,11 +291,11 @@ export default defineComponent({
 
     // --------------- Native APIs start -----------------------------
     async refreshNativeConfig() {
-      this.localFolders = await nativex.getLocalFolders();
+      this.localFolders = await nativeSync.getLocalFolders();
     },
 
     async updateDeviceFolders() {
-      await nativex.setLocalFolders(this.localFolders);
+      await nativeSync.setLocalFolders(this.localFolders);
     },
 
     async logout() {

@@ -1,7 +1,13 @@
 import axios from '@nextcloud/axios';
 import { generateUrl } from '@nextcloud/router';
-import type { IDay, IPhoto } from './types';
-import { API as SAPI } from './services/API';
+
+import type { IDay, IPhoto } from '../types';
+import { API as SAPI } from '../services/API';
+import { addOrigin } from './helpers';
+
+import type { LocalFolderConfig, ISystemImage } from './types';
+import * as sync from './sync';
+
 const euc = encodeURIComponent;
 
 /** Access NativeX over localhost */
@@ -9,20 +15,6 @@ const BASE_URL = 'http://127.0.0.1';
 
 /** NativeX asynchronous API */
 export const API = {
-  /**
-   * Local days API.
-   * @regex ^/api/days$
-   * @returns {IDay[]} for all locally available days.
-   */
-  DAYS: () => `${BASE_URL}/api/days`,
-  /**
-   * Local photos API.
-   * @regex ^/api/days/\d+$
-   * @param dayId Day ID to fetch photos for
-   * @returns {IPhoto[]} for all locally available photos for this day.
-   */
-  DAY: (dayId: number) => `${BASE_URL}/api/days/${dayId}`,
-
   /**
    * Local photo metadata API.
    * @regex ^/api/image/info/\d+$
@@ -81,13 +73,6 @@ export const API = {
    * @returns {void}
    */
   SHARE_LOCAL: (auid: number) => `${BASE_URL}/api/share/local/${auid}`,
-
-  /**
-   * Get list of local folders configuration.
-   * @regex ^/api/config/local-folders$
-   * @returns {LocalFolderConfig[]} List of local folders configuration
-   */
-  CONFIG_LOCAL_FOLDERS: () => `${BASE_URL}/api/config/local-folders`,
 };
 
 /** NativeX synchronous API. */
@@ -143,12 +128,6 @@ export type NativeX = {
   destroyVideo: (fileid: string) => void;
 
   /**
-   * Set the local folders configuration to show in the timeline.
-   * @param json JSON-encoded array of LocalFolderConfig
-   */
-  configSetLocalFolders: (json: string) => void;
-
-  /**
    * Start the login process
    * @param baseUrl Base URL of the Nextcloud instance
    * @param loginFlowUrl URL to start the login flow
@@ -164,13 +143,18 @@ export type NativeX = {
    * Reload the app.
    */
   reload: () => void;
-};
 
-/** Setting of whether a local folder is enabled */
-export type LocalFolderConfig = {
-  id: string;
-  name: string;
-  enabled: boolean;
+  /**
+   * Initialize local sync.
+   * @param startTime Start time of the sync
+   */
+  localSyncInit: (startTime: number) => void;
+
+  /**
+   * Get the next batch of local sync.
+   * @returns {ISystemImage[]} Batch of photos to add
+   */
+  localSyncNext: () => string;
 };
 
 /** The native interface is a global object that is injected by the native app. */
@@ -270,9 +254,7 @@ export async function extendDaysWithLocal(days: IDay[]) {
   if (!has()) return;
 
   // Query native part
-  const res = await fetch(API.DAYS());
-  if (!res.ok) return;
-  const local: IDay[] = await res.json();
+  const local: IDay[] = await sync.getDaysLocal();
   const remoteMap = new Map(days.map((d) => [d.dayid, d]));
 
   // Merge local days into remote days
@@ -301,12 +283,10 @@ export async function extendDaysWithLocal(days: IDay[]) {
 export async function extendDayWithLocal(dayId: number, photos: IPhoto[]) {
   if (!has()) return;
 
-  // Query native part
-  const res = await fetch(API.DAY(dayId));
-  if (!res.ok) return;
-
   // Merge local photos into remote photos
-  const localPhotos: IPhoto[] = await res.json();
+  const localPhotos: IPhoto[] = await sync.getDayLocal(dayId);
+  console.log('nativex', dayId, JSON.stringify(localPhotos));
+
   const serverAUIDs = new Set(photos.map((p) => p.auid));
 
   // Filter out files that are only available locally
@@ -333,21 +313,6 @@ export async function deleteLocalPhotos(photos: IPhoto[], dry: boolean = false):
 }
 
 /**
- * Get list of local folders configuration.
- * Should be called only if NativeX is available.
- */
-export async function getLocalFolders() {
-  return (await axios.get<LocalFolderConfig[]>(API.CONFIG_LOCAL_FOLDERS())).data;
-}
-
-/**
- * Set list of local folders configuration.
- */
-export async function setLocalFolders(config: LocalFolderConfig[]) {
-  nativex?.configSetLocalFolders(JSON.stringify(config));
-}
-
-/**
  * Log out from Nextcloud and pass ahead.
  */
 export async function logout() {
@@ -357,12 +322,28 @@ export async function logout() {
 }
 
 /**
- * Add current origin to URL if doesn't have any protocol or origin.
+ * Iterate the local files on the device.
  */
-function addOrigin(url: string) {
-  return url.match(/^(https?:)?\/\//)
-    ? url
-    : url.startsWith('/')
-    ? `${location.origin}${url}`
-    : `${location.origin}/${url}`;
+export async function* localSyncIter(startTime: number) {
+  if (!has()) return;
+
+  // Initialize and iterate
+  nativex.localSyncInit(startTime);
+
+  while (true) {
+    const next = nativex.localSyncNext();
+    if (!next) break;
+
+    let photos: ISystemImage[];
+    try {
+      photos = JSON.parse(next);
+    } catch (e) {
+      console.error('Failed to parse local sync JSON', e);
+      continue;
+    }
+
+    for (const photo of photos) {
+      yield photo;
+    }
+  }
 }
