@@ -38,22 +38,39 @@ let _enabledBucketIds: number[] | null = null;
  */
 export async function go() {
   // Clear local database
-  // await db.local.clear();
+  await db.local.clear();
 
-  for await (const sysImg of localSyncIter(0)) {
-    // Check if file already exists with same mtime
-    if (await db.local.where({ fileid: sysImg.fileid, mtime: sysImg.mtime }).first()) continue;
+  // Mark all entries
+  await db.local.where({ flag: 0 }).modify({ flag: 1 });
 
-    // Insert new file
-    await db.transaction('rw', db.local, async () => {
-      await db.local.where({ fileid: sysImg.fileid }).delete();
-      await db.local.add({
-        ...sysImg,
-        dayid: Math.floor(sysImg.datetaken / 86400),
-        flag: 0,
-      });
-    });
+  for await (const sysImg of localSyncIter()) {
+    await syncImage(sysImg);
   }
+
+  // Delete all entries with flag=1
+  await db.local.where({ flag: 1 }).delete();
+}
+
+async function syncImage(sysImg: ISystemImage) {
+  // Check if file already exists with same mtime
+  const entry = await db.local.where({ fileid: sysImg.fileid, mtime: sysImg.mtime }).first();
+  if (entry) {
+    // Unmark this entry
+    await db.local.where({ id: entry.id }).modify({ flag: 0 });
+    return;
+  }
+
+  // Insert new file
+  await db.transaction('rw', db.local, async () => {
+    await db.local.where({ fileid: sysImg.fileid }).delete();
+    await db.local.add({
+      ...sysImg,
+      dayid: Math.floor(sysImg.datetaken / 86400),
+      flag: 0,
+    });
+  });
+
+  console.log('nativex, synced file', sysImg.basename);
 }
 
 /**

@@ -146,9 +146,8 @@ export type NativeX = {
 
   /**
    * Initialize local sync.
-   * @param startTime Start time of the sync
    */
-  localSyncInit: (startTime: number) => void;
+  localSyncInit: () => void;
 
   /**
    * Get the next batch of local sync.
@@ -324,11 +323,11 @@ export async function logout() {
 /**
  * Iterate the local files on the device.
  */
-export async function* localSyncIter(startTime: number) {
+export async function* localSyncIter() {
   if (!has()) return;
 
   // Initialize and iterate
-  nativex.localSyncInit(startTime);
+  nativex.localSyncInit();
 
   while (true) {
     const next = nativex.localSyncNext();
